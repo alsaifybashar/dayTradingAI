@@ -1,0 +1,31 @@
+{
+    "ticker": "EGHAR",
+    "queryCount": 2,
+    "resultsCount": 2,
+    "adjusted": true,
+    "results": [
+        {
+            "v": 1184670.0,
+            "vw": 0.22,
+            "o": 0.22,
+            "c": 0.22,
+            "h": 0.35,
+            "l": 0.2001,
+            "t": 1751256000000,
+            "n": 31
+        },
+        {
+            "v": 24834,
+            "vw": 0.2305,
+            "o": 0.23,
+            "c": 0.24,
+            "h": 0.24,
+            "l": 0.23,
+            "t": 1751342400000,
+            "n": 18
+        }
+    ],
+    "status": "DELAYED",
+    "request_id": "f161eb6cdfc3a202f8ce96b1d3eb33d7",
+    "count": 2
+}
