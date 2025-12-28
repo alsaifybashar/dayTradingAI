@@ -9,3 +9,6 @@ feedparser
 openai
 # For potential local AI usage
 # langchain
+google-generativeai
+pandas_ta
+colorama
