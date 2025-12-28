@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+requests
+python-dotenv
+yfinance
+pandas
+beautifulsoup4
+feedparser
+openai
+# For potential local AI usage
+# langchain
