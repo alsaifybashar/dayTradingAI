@@ -1,3 +1,11 @@
+"""
+Enhanced Data Manager
+
+Aggregates market data, news, and technical analysis.
+Now includes candlestick pattern detection and signal generation
+to reduce AI dependency for trading decisions.
+"""
+
 import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
@@ -7,11 +15,17 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import json
 import random
+from typing import Dict, List, Optional
+
+from backend.services.candlestick_patterns import pattern_detector
+from backend.services.signal_generator import signal_generator
+from backend.services.news_service import news_service
+
 
 class DataManager:
     def __init__(self):
         self.tickers = ["AAPL", "TSLA", "NVDA", "AMD", "META", "MSFT", "GOOGL", "AMZN"]
-        self.indices = ["^GSPC", "^IXIC", "^OMXS30"] # S&P 500, Nasdaq, OMX Stockholm 30
+        self.indices = ["^GSPC", "^IXIC", "^OMXS30"]  # S&P 500, Nasdaq, OMX Stockholm 30
 
     def get_batch_data(self, tickers: list):
         """
@@ -21,7 +35,7 @@ class DataManager:
         try:
             tickers_str = " ".join(tickers)
             batch = yf.Tickers(tickers_str)
-            
+
             for ticker in tickers:
                 try:
                     stock = batch.tickers[ticker]
@@ -30,10 +44,10 @@ class DataManager:
                     prev_close = info.previous_close
                     change = price - prev_close
                     change_percent = (change / prev_close) * 100
-                    
+
                     hist = stock.history(period="5d", interval="60m")
                     sparkline = hist['Close'].tail(20).tolist()
-                    
+
                     results.append({
                         "ticker": ticker.upper(),
                         "price": price,
@@ -53,28 +67,33 @@ class DataManager:
         except:
             return []
 
-    def get_market_data(self, ticker: str):
+    def get_market_data(self, ticker: str) -> Optional[Dict]:
         """
-        Fetches comprehensive market data: Price, Volume, OHLC, and Technical Indicators.
+        Fetches comprehensive market data with pattern analysis.
+        Includes: Price, Volume, OHLC, Technical Indicators, and Candlestick Patterns.
         """
         try:
             stock = yf.Ticker(ticker)
             info = stock.fast_info
-            
-            # Fetch history for Technical Analysis (RSI, MACD)
-            # We need enough data points for indicators (e.g., 20)
-            hist = stock.history(period="5d", interval="15m") 
-            
+
+            # Fetch history for Technical Analysis
+            hist = stock.history(period="5d", interval="15m")
+
             if hist.empty:
                 return None
 
-            # Calculate Indicators using pandas_ta
+            # Calculate Technical Indicators using pandas_ta
             hist.ta.rsi(length=14, append=True)
             hist.ta.macd(append=True)
-            
+
+            # Additional indicators for better analysis
+            hist.ta.sma(length=20, append=True)
+            hist.ta.ema(length=9, append=True)
+            hist.ta.bbands(length=20, append=True)
+
             latest = hist.iloc[-1]
-            
-            # Format candles for frontend
+
+            # Format candles for frontend and pattern analysis
             candles = []
             for index, row in hist.iterrows():
                 candles.append({
@@ -86,18 +105,57 @@ class DataManager:
                     "volume": int(row['Volume']),
                 })
 
+            # Analyze candlestick patterns
+            candle_objects = pattern_detector.candles_from_list(candles)
+            patterns = pattern_detector.analyze(candle_objects)
+
+            # Get pattern signal
+            pattern_signal = pattern_detector.get_trading_signal(
+                candle_objects,
+                rsi=latest.get('RSI_14'),
+                macd=latest.get('MACD_12_26_9'),
+                macd_signal=latest.get('MACDs_12_26_9')
+            )
+
+            # Calculate average volume for comparison
+            avg_volume = hist['Volume'].mean() if 'Volume' in hist else 0
+
             data = {
                 "symbol": ticker,
                 "price": info.last_price,
                 "change": info.last_price - info.previous_close,
                 "change_percent": ((info.last_price - info.previous_close) / info.previous_close) * 100,
                 "volume": info.last_volume,
+                "avg_volume": int(avg_volume),
                 "open": info.open,
                 "high": info.day_high,
                 "low": info.day_low,
+
+                # Technical Indicators
                 "rsi": latest.get('RSI_14'),
                 "macd": latest.get('MACD_12_26_9'),
                 "macd_signal": latest.get('MACDs_12_26_9'),
+                "macd_hist": latest.get('MACDh_12_26_9'),
+                "sma_20": latest.get('SMA_20'),
+                "ema_9": latest.get('EMA_9'),
+                "bb_upper": latest.get('BBU_20_2.0'),
+                "bb_middle": latest.get('BBM_20_2.0'),
+                "bb_lower": latest.get('BBL_20_2.0'),
+
+                # Pattern Analysis
+                "patterns": [
+                    {
+                        "name": p.name,
+                        "type": p.pattern_type.value,
+                        "strength": p.strength.name,
+                        "confidence": p.confidence,
+                        "action": p.action_suggestion
+                    }
+                    for p in patterns[:5]  # Top 5 patterns
+                ],
+                "pattern_signal": pattern_signal,
+
+                # Raw data
                 "sparkline": hist['Close'].tail(20).tolist(),
                 "candles": candles,
                 "timestamp": datetime.now().isoformat()
@@ -107,83 +165,103 @@ class DataManager:
             print(f"[DataManager] Error fetching market data for {ticker}: {e}")
             return None
 
+    def get_full_analysis(self, ticker: str, portfolio_balance: float = 1000) -> Dict:
+        """
+        Get complete analysis including market data, news, patterns, and trading signal.
+        This is the main method for trading decisions.
+
+        Returns a signal that indicates whether AI should be consulted.
+        """
+        # Get market data with patterns
+        market_data = self.get_market_data(ticker)
+
+        if not market_data:
+            return {
+                "error": "Failed to fetch market data",
+                "use_ai": True
+            }
+
+        # Get news and sentiment
+        news_articles = news_service.get_news(ticker, max_articles=10)
+        sentiment = news_service.analyze_sentiment(news_articles)
+
+        # Generate trading signal
+        signal = signal_generator.generate_signal(
+            ticker=ticker,
+            candles=market_data.get("candles", []),
+            rsi=market_data.get("rsi"),
+            macd=market_data.get("macd"),
+            macd_signal=market_data.get("macd_signal"),
+            volume=market_data.get("volume"),
+            avg_volume=market_data.get("avg_volume"),
+            news_articles=news_articles,
+            portfolio_balance=portfolio_balance
+        )
+
+        return {
+            "ticker": ticker,
+            "market_data": market_data,
+            "news": news_articles[:5],  # Top 5 news
+            "sentiment": sentiment,
+            "signal": {
+                "decision": signal.decision,
+                "confidence": signal.confidence,
+                "use_ai": signal.use_ai,
+                "reasoning": signal.reasoning,
+                "suggested_quantity": signal.suggested_quantity,
+                "patterns_detected": signal.patterns_detected,
+                "scores": {
+                    "pattern": signal.pattern_score,
+                    "indicator": signal.indicator_score,
+                    "sentiment": signal.sentiment_score,
+                    "volume": signal.volume_score
+                }
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
     def get_order_book(self, ticker: str):
         """
         Simulates Level 2 Order Book data based on market activity.
         Real L2 data usually requires paid APIs.
         """
         try:
-            # Random variation for simulation
             spread = random.uniform(0.01, 0.05)
             depth_factor = random.randint(100, 500)
-            
+
             stock = yf.Ticker(ticker)
             price = stock.fast_info.last_price or 100.0
-            
+
             bids = [
-                {"price": price - (i * spread), "size": depth_factor * (5-i)} 
+                {"price": price - (i * spread), "size": depth_factor * (5-i)}
                 for i in range(1, 6)
             ]
             asks = [
-                {"price": price + (i * spread), "size": depth_factor * (5-i)} 
+                {"price": price + (i * spread), "size": depth_factor * (5-i)}
                 for i in range(1, 6)
             ]
-            
+
             return {"bids": bids, "asks": asks}
         except:
             return {"bids": [], "asks": []}
 
-    def get_news(self, ticker: str = None):
+    def get_news(self, ticker: str = None) -> List[Dict]:
         """
-        Aggregates news from Yahoo, CNBC, and Placera.
+        Aggregates news from multiple sources.
+        Uses the enhanced news service.
         """
-        news_items = []
-        
-        # 1. Yahoo Finance (Specific Ticker)
-        if ticker:
-            try:
-                stock = yf.Ticker(ticker)
-                for item in stock.news[:3]:
-                    news_items.append({
-                        "source": "Yahoo Finance",
-                        "title": item.get('title'),
-                        "link": item.get('link'),
-                        "published": str(datetime.fromtimestamp(item.get('providerPublishTime', 0)))
-                    })
-            except Exception as e:
-                print(f"[DataManager] Yahoo News Error: {e}")
+        return news_service.get_news(ticker, max_articles=10)
 
-        # 2. CNBC (General Market) - RSS
-        try:
-            feed = feedparser.parse("https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114")
-            for entry in feed.entries[:2]:
-                news_items.append({
-                    "source": "CNBC",
-                    "title": entry.title,
-                    "link": entry.link,
-                    "published": entry.published
-                })
-        except Exception:
-            pass
-
-        # 3. Placera (Swedish - General)
-        # Scrape headline from Placera
-        try:
-            response = requests.get("https://www.placera.se/placera/nyheter.html")
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.content, 'html.parser')
-                headlines = soup.select('.news-list-item h2 a') # Adjust selector based on actual site structure
-                for h in headlines[:2]:
-                    news_items.append({
-                        "source": "Placera.se",
-                        "title": h.get_text().strip(),
-                        "link": "https://www.placera.se" + h['href'],
-                        "published": datetime.now().strftime("%Y-%m-%d %H:%M")
-                    })
-        except Exception as e:
-            pass
-            
-        return news_items
+    def get_news_with_sentiment(self, ticker: str = None) -> Dict:
+        """
+        Get news with sentiment analysis (no AI needed).
+        """
+        articles = news_service.get_news(ticker, max_articles=15)
+        sentiment = news_service.analyze_sentiment(articles)
+        return {
+            "articles": articles,
+            "sentiment": sentiment
+        }
 
     def get_macro_context(self):
         """
@@ -201,5 +279,32 @@ class DataManager:
         except:
             pass
         return context
+
+    def quick_pattern_check(self, ticker: str) -> Dict:
+        """
+        Ultra-fast pattern check for real-time monitoring.
+        No news, no AI - just pattern analysis.
+        """
+        try:
+            stock = yf.Ticker(ticker)
+            hist = stock.history(period="2d", interval="5m")
+
+            if hist.empty:
+                return {"decision": "HOLD", "confidence": 0}
+
+            candles = []
+            for index, row in hist.iterrows():
+                candles.append({
+                    "open": float(row['Open']),
+                    "high": float(row['High']),
+                    "low": float(row['Low']),
+                    "close": float(row['Close']),
+                    "volume": int(row['Volume'])
+                })
+
+            return signal_generator.get_quick_decision(candles[-20:])
+        except Exception as e:
+            return {"decision": "HOLD", "confidence": 0, "error": str(e)}
+
 
 data_manager = DataManager()
