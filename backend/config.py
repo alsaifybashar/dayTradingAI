@@ -9,6 +9,7 @@ class Config:
     POLYGON_IO_API_KEY = os.environ.get('POLYGON_IO_API_KEY')
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
     # Add other keys here as needed
     # NEWS_API_KEY = os.environ.get('NEWS_API_KEY')
 

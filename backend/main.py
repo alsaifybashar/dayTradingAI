@@ -23,8 +23,8 @@ async def antigravity_loop():
             # Simple list of active tickers to monitor
             # In a real system this might be dynamic
             tickers_to_monitor = [
-                "AAPL", "NVDA", "TSLA", "AMD", "MSFT", "JPM", "DIS", "BA", # US
-                "VOLV-B.ST", "ERIC-B.ST", "HM-B.ST", "AZN.ST", "INVE-B.ST", "SAND.ST" # Stockholm
+                "AAPL", "NVDA", "TSLA", "AMD", "MSFT", "JPM", "DIS", "BA", "MSFT", "NFLX", "AMZN", "BKNG", "ASML", ""  # US
+                "VOLV-B.ST", "ERIC-B.ST", "HM-B.ST", "AZN.ST", "INVE-B.ST", "SAND.ST", "SAAB-B.ST" # Stockholm
             ] 
             
             for ticker in tickers_to_monitor:

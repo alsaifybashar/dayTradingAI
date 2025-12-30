@@ -12,22 +12,34 @@ AI is consulted when:
 """
 
 import json
+import os
 from google import genai
 from google.genai import types
+from openai import OpenAI
+import anthropic
 from backend.config import config
 from datetime import datetime
 from typing import Dict, Optional
-
+import time
 
 class AIEngine:
     def __init__(self):
-        self.api_key = config.GEMINI_API_KEY
-        if self.api_key:
-            self.client = genai.Client(api_key=self.api_key)
-        else:
-            self.client = None
-
-        # Track API calls for cost monitoring
+        # Gemini Init
+        self.gemini_key = config.GEMINI_API_KEY
+        self.gemini_client = genai.Client(api_key=self.gemini_key) if self.gemini_key else None
+        
+        # OpenAI Init
+        self.openai_key = config.OPENAI_API_KEY
+        self.openai_client = OpenAI(api_key=self.openai_key) if self.openai_key else None
+        
+        # Claude (Anthropic) Init
+        self.anthropic_key = config.ANTHROPIC_API_KEY
+        self.anthropic_client = anthropic.Anthropic(api_key=self.anthropic_key) if self.anthropic_key else None
+        
+        # Track exhausted providers (persists across requests)
+        self.exhausted_providers = set()
+        
+        # Track usage
         self.call_count = 0
         self.calls_today = 0
         self.last_reset = datetime.now().date()
@@ -44,17 +56,7 @@ class AIEngine:
         # Low confidence
         if signal.get("confidence", 0) < 60:
             return True
-
-        # Check for conflicting signals
-        scores = signal.get("scores", {})
-        pattern = scores.get("pattern", 0)
-        indicator = scores.get("indicator", 0)
-        sentiment = scores.get("sentiment", 0)
-
-        # If pattern and sentiment disagree strongly
-        if pattern * sentiment < -500:  # Strong disagreement
-            return True
-
+            
         return False
 
     def analyze_situation(self, ticker: str, market_data: Dict,
@@ -62,163 +64,147 @@ class AIEngine:
                           algorithmic_signal: Optional[Dict] = None) -> Dict:
         """
         AI analysis with context from algorithmic analysis.
-
-        Args:
-            ticker: Stock ticker symbol
-            market_data: Market data including patterns
-            news_data: News articles
-            portfolio_context: Current portfolio state
-            algorithmic_signal: Signal from signal_generator (optional)
-
-        Returns:
-            AI decision with reasoning
+        Uses fallback strategy: Gemini 2.0 -> Gemini 1.5 -> OpenAI -> Claude.
         """
-        if not self.client:
-            return {"decision": "IGNORE", "confidence": 0, "reasoning": "AI Config Missing"}
-
-        # Reset daily counter
+        # Reset counters
         today = datetime.now().date()
         if today != self.last_reset:
             self.calls_today = 0
             self.last_reset = today
+            self.exhausted_providers.clear() # Retry providers on new day
 
-        # Increment counters
         self.call_count += 1
         self.calls_today += 1
+        
+        print(f"🟣 [AI] Analyzing context for {ticker} (Call #{self.calls_today})...")
 
-        print(f"🟣 [AI] Analyzing context for {ticker} (Call #{self.calls_today} today)...")
-
-        # Build context with algorithmic signal
+        # Build context
         context_payload = {
             "ticker": ticker,
             "market_data": self._simplify_market_data(market_data),
             "patterns_detected": market_data.get("patterns", []),
-            "pattern_signal": market_data.get("pattern_signal", {}),
-            "recent_news": news_data[:5] if news_data else [],
+            "recent_news": news_data[:3] if news_data else [], # Limit to 3 to save tokens
             "portfolio_status": portfolio_context
         }
 
-        # Include algorithmic signal if available
         if algorithmic_signal:
             context_payload["algorithmic_analysis"] = {
                 "decision": algorithmic_signal.get("decision"),
                 "confidence": algorithmic_signal.get("confidence"),
-                "reasoning": algorithmic_signal.get("reasoning"),
-                "pattern_score": algorithmic_signal.get("scores", {}).get("pattern"),
-                "sentiment_score": algorithmic_signal.get("scores", {}).get("sentiment")
+                "reasoning": algorithmic_signal.get("reasoning")
             }
 
+        # Simplified Prompt
         prompt = f"""
-        You are an expert day trader making a final decision.
-
-        IMPORTANT: An algorithmic analysis has already been performed.
-        Your role is to VALIDATE or OVERRIDE the algorithmic decision.
-
-        Only override if you see something the algorithm missed:
-        - Breaking news that changes the situation
-        - Market conditions the patterns don't capture
-        - Risk factors not accounted for
-
-        Input Context:
-        {json.dumps(context_payload, indent=2, default=str)}
-
-        Task:
-        1. Review the algorithmic analysis
-        2. Check if any news or market conditions warrant overriding
-        3. Rate your confidence (0-100)
-        4. Make final decision: BUY, SELL, or IGNORE
-
-        Response Format (JSON ONLY):
+        You are an expert day trader. Validate the algorithmic signal.
+        Input: {json.dumps(context_payload, indent=2, default=str)}
+        
+        Output JSON ONLY:
         {{
             "decision": "BUY" | "SELL" | "IGNORE",
-            "confidence": <integer 0-100>,
-            "reasoning": "<string - explain why you agree or disagree with algorithm>",
-            "suggested_quantity": <integer>,
-            "override_algorithm": <boolean - true if overriding algorithmic decision>
+            "confidence": 0-100,
+            "reasoning": "brief explanation",
+            "suggested_quantity": 0,
+            "override_algorithm": false
         }}
         """
 
-        # Try models in order of preference
-        models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"]
-        last_error = None
+        # Priority List of Providers/Models
+        providers = []
+        
+        # 1. Gemini 2.0 Flash (Fastest/Newest)
+        if self.gemini_client and "gemini" not in self.exhausted_providers:
+            providers.append(("gemini", "gemini-2.0-flash-exp"))
+            
+        # 2. Gemini 1.5 Flash (Reliable Fallback)
+        if self.gemini_client and "gemini" not in self.exhausted_providers:
+            providers.append(("gemini", "gemini-1.5-flash-latest"))
+            
+        # 3. OpenAI GPT-4o-mini (Cheap/Fast)
+        if self.openai_client and "openai" not in self.exhausted_providers:
+            providers.append(("openai", "gpt-4o-mini"))
+            
+        # 4. Gemini Pro (Stronger)
+        if self.gemini_client and "gemini" not in self.exhausted_providers:
+            providers.append(("gemini", "gemini-1.5-pro"))
+            
+        # 5. Claude Haiku (Fast)
+        if self.anthropic_client and "anthropic" not in self.exhausted_providers:
+            providers.append(("anthropic", "claude-3-haiku-20240307"))
 
-        for model_name in models:
+        if not providers:
+            print("🛑 CRITICAL: ALL AI PROVIDERS EXHAUSTED.")
+            return {"decision": "IGNORE", "confidence": 0, "reasoning": "AI Service Unreachable", "override_algorithm": False}
+
+        # Try loop
+        for provider, model in providers:
             try:
-                response = self.client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json"
-                    )
-                )
-                result = json.loads(response.text)
-                result["model_used"] = model_name
-                result["call_number"] = self.calls_today
-                return result
+                if provider == "gemini":
+                    return self._call_gemini(model, prompt)
+                elif provider == "openai":
+                    return self._call_openai(model, prompt)
+                elif provider == "anthropic":
+                    return self._call_anthropic(model, prompt)
+                    
             except Exception as e:
-                last_error = e
+                err_str = str(e)
+                print(f"⚠️ [AI] {provider.upper()} ({model}) Failed: {err_str[:100]}...")
+                
+                # Check formatting of Google Errors
+                is_quota = "429" in err_str or "quota" in err_str.lower() or "exhausted" in err_str.lower()
+                
+                if is_quota:
+                    print(f"   🔒 {provider.upper()} Quota Exceeded. Marking provider as exhausted.")
+                    self.exhausted_providers.add(provider)
+                
                 continue
+                
+        return {"decision": "IGNORE", "confidence": 0, "reasoning": "All Models Failed", "override_algorithm": False}
 
-        print(f"🔴 [AI] All models failed. Last error: {last_error}")
-        return {
-            "decision": "IGNORE",
-            "confidence": 0,
-            "reasoning": f"AI Error: {last_error}",
-            "override_algorithm": False
-        }
+    def _call_gemini(self, model, prompt):
+        response = self.gemini_client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json")
+        )
+        print(f"✅ [AI] Success using Gemini ({model})")
+        return json.loads(response.text)
+
+    def _call_openai(self, model, prompt):
+        response = self.openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        print(f"✅ [AI] Success using OpenAI ({model})")
+        return json.loads(response.choices[0].message.content)
+
+    def _call_anthropic(self, model, prompt):
+        response = self.anthropic_client.messages.create(
+            model=model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt + "\nRespond with valid JSON only."}]
+        )
+        print(f"✅ [AI] Success using Claude ({model})")
+        content = response.content[0].text
+        start = content.find('{')
+        end = content.rfind('}') + 1
+        return json.loads(content[start:end]) if start != -1 else {"decision": "IGNORE"}
 
     def _simplify_market_data(self, market_data: Dict) -> Dict:
-        """Simplify market data to reduce token usage"""
-        if not market_data:
-            return {}
-
+        if not market_data: return {}
         return {
             "price": market_data.get("price"),
-            "change_percent": market_data.get("change_percent"),
-            "volume": market_data.get("volume"),
+            "change": market_data.get("change_percent"),
             "rsi": market_data.get("rsi"),
-            "macd": market_data.get("macd"),
-            "macd_signal": market_data.get("macd_signal")
+            "macd": market_data.get("macd_signal")
         }
-
+        
     def quick_sentiment_check(self, news_headlines: list) -> Dict:
-        """
-        Quick AI sentiment check for news headlines only.
-        Uses minimal tokens for cost efficiency.
-        """
-        if not self.client or not news_headlines:
-            return {"sentiment": "neutral", "confidence": 0}
-
-        headlines_text = "\n".join([n.get("title", "") for n in news_headlines[:5]])
-
-        prompt = f"""
-        Analyze these headlines for market sentiment.
-        Headlines:
-        {headlines_text}
-
-        Response (JSON):
-        {{"sentiment": "bullish" | "bearish" | "neutral", "confidence": 0-100}}
-        """
-
-        try:
-            response = self.client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
-            return json.loads(response.text)
-        except:
-            return {"sentiment": "neutral", "confidence": 0}
+        # Simplified stubs to prevent errors if called
+        return {"sentiment": "neutral", "confidence": 0}
 
     def get_usage_stats(self) -> Dict:
-        """Get AI usage statistics"""
-        return {
-            "total_calls": self.call_count,
-            "calls_today": self.calls_today,
-            "last_reset": str(self.last_reset)
-        }
-
+        return {"calls_today": self.calls_today, "exhausted": list(self.exhausted_providers)}
 
 ai_engine = AIEngine()

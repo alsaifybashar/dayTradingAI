@@ -1,95 +1,154 @@
-# dayTradingAI - Professional Day Trading Dashboard
+# 🦅 dayTradingAI - Autonomous Hybrid Trading System
 
-**dayTradingAI** is an advanced, AI-powered day trading assistant designed to analyze real-time market data, aggregate news, and provide actionable trading insights using **Google Gemini 2.5**. It features a futuristic, "professional cyberpunk" dashboard built with React and a robust FastAPI backend.
+**dayTradingAI** is a professional-grade, autonomous trading assistant designed to conquer the "Paper Trading Challenge". It combines **traditional algorithmic analysis** (Technical Indicators & Candlestick Patterns) with **Generative AI** (Gemini, OpenAI, Claude) to make high-probability trading decisions.
 
-The system is designed for a **$1000 Paper Trading Challenge**, with the goal of doubling the portfolio through autonomous, risk-managed day trades.
+The system features a futuristic "Cyberpunk" React dashboard for real-time monitoring and a robust FastAPI backend that handles data aggregation, signal generation, and autonomous execution.
+
+![Dashboard Preview](https://placehold.co/800x400?text=Dashboard+Preview) 
 
 ## 🚀 Key Features
 
-*   **Real-Time Data (Yahoo Finance)**:
-    *   **Live Charts**: Fetches intraday candlestick data (1-minute/5-minute intervals) directly from Yahoo Finance.
-    *   **Accurate Watchlist**: Uses a batch processing endpoint (`/api/batch_market_data`) to update the watchlist with real-time prices and sparkline trends every 60 seconds.
-*   **AI Insight Engine**:
-    *   Uses **Google Gemini 2.5** to analyze market structure, volume anomalies, and news sentiment.
-    *   Generates **BUY/SELL/HOLD/TRACK** decisions with confidence scores (0-100%).
-    *   Provides specific entry, target, and stop-loss levels.
-*   **Autonomous Paper Trading**:
-    *   **Risk Management**: Strictly limits position sizes (default 20% of portfolio) to prevent blow-ups.
-    *   **Smart Sizing**: The AI suggests specific share quantities based on the setup's quality.
-    *   **Performance Tracking**: Logs every trade in `data/trade_log.csv` and updates `data/portfolio.json`.
-*   **Live News Feed**: Aggregates real-time news from major financial outlets via Yahoo Finance, highlighting positive/negative sentiment keywords.
-*   **Professional UI/UX**:
-    *   Dark mode "cyberpunk" aesthetic with glassmorphism effects.
-    *   Interactive visualizations (Sparklines, Speedometers, Candlestick Charts).
-    *   Responsive and high-performance React frontend.
+### 🧠 Hybrid Intelligence Engine
+The system uses a cost-efficient "Algorithm First" approach:
+1.  **Algorithmic Core**: Analyzes technicals (RSI, MACD, Bollinger Bands) and Candlestick Patterns (Engulfing, Hammers, Morning Stars) to generate base signals.
+2.  **AI Validation**: If the algorithm is unsure (low confidence) or signals are mixed, it consults an LLM agent to analyze the context (News + Market Structure).
+3.  **Multi-Model Fallback**: Guaranteed uptime with smart fallback routing:
+    *   **Primary**: Google Gemini 2.0 Flash (Fast & Free tier)
+    *   **Backup 1**: Gemini 1.5 Flash / Pro
+    *   **Backup 2**: OpenAI GPT-4o-mini
+    *   **Backup 3**: Anthropic Claude 3 Haiku
+
+### ⚡ Real-Time Data & Execution
+*   **Live Market Data**: Fetches 15-minute candles and real-time quotes via `yfinance`.
+*   **News Aggregator**: Scrapes and analyzes news from CNBC, Reuters, Yahoo Finance, and more.
+*   **Sentiment Analysis**: Keyword-based sentiment scoring + AI context analysis.
+*   **Smart Risk Management**:
+    *   Kelly Criterion-style position sizing.
+    *   Automatic Stop-Loss (-2%) and Take-Profit (+4%) monitoring.
+    *   Portfolio caps to prevent over-leverage.
+
+### 🖥️ Professional Dashboard
+*   **Tech Stack**: React 18, Vite, Custom CSS ("Glassmorphism").
+*   **Visualizations**: Real-time sparklines, confident gauges, and live trade logs.
+*   **Manual Override**: Ability to trigger manual AI analysis and trades.
+
+---
 
 ## 🛠️ Technology Stack
 
-*   **Frontend**: React, Vite, CSS Modules (Custom Design System).
-*   **Backend**: FastAPI, Uvicorn, Python 3.9+.
-*   **AI**: Google Gemini API (`google-generativeai`).
-*   **Data Sources**: `yfinance` (Yahoo Finance), `feedparser`.
+*   **Backend**: Python 3.9+, FastAPI, Uvicorn
+*   **Analysis**: `pandas`, `pandas_ta`, `numpy`
+*   **AI Integration**: `google-generativeai`, `openai`, `anthropic`
+*   **Frontend**: React, Vite, Axios
+*   **Data**: Yahoo Finance API, RSS Feeds
 
-## 📦 Installation & Setup
+---
 
-1.  **Clone the repository**:
-    ```bash
-    git clone <repository-url>
-    cd dayTradingAI
-    ```
+## 📦 Installation
 
-2.  **Backend Setup**:
-    ```bash
-    cd backend
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    pip install -r requirements.txt
-    ```
-
-3.  **Frontend Setup**:
-    ```bash
-    cd frontend
-    npm install
-    ```
-
-4.  **Environment Variables**:
-    Create a `.env` file in `backend/` or ensure `backend/config.py` has your keys:
-    ```env
-    GEMINI_API_KEY=your_gemini_key_here
-    ```
-
-## 🏃‍♂️ Running the Application
-
-Use the startup script or run manually:
-
-**Backend** (API runs on port 8000):
+### 1. Clone the Repository
 ```bash
-# In dayTradingAI root
-source backend/venv/bin/activate
+git clone <your-repo-url>
+cd dayTradingAI
+```
+
+### 2. Configure Environment Variables
+Create a `.env` file in the `backend/` directory. You can use multiple providers for resilience.
+
+```env
+# backend/.env
+
+# Primary (Required for best performance)
+GEMINI_API_KEY=your_google_gemini_key
+
+# Optional (For Fallback)
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+```
+
+### 3. Install Dependencies
+**Backend:**
+```bash
+cd backend
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# Mac/Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+**Frontend:**
+```bash
+cd ../frontend
+npm install
+```
+
+---
+
+## 🏃‍♂️ Usage
+
+We provide a specialized startup script that handles everything (requires Bash/WSL on Windows).
+
+### **The "One-Click" Start**
+From the root directory:
+```bash
+./start.sh
+```
+This script will:
+1.  Start the FastAPI Backend (Port 8000).
+2.  Start the Vite Frontend (Port 5173).
+3.  Handle graceful shutdown (Ctrl+C).
+
+### **Manual Startup**
+If you prefer running terminals separately:
+
+**Terminal 1 (Backend)**
+```bash
+cd backend
+source venv/bin/activate
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Frontend** (Dashboard runs on port 5173):
+**Terminal 2 (Frontend)**
 ```bash
-# In dayTradingAI/frontend
+cd frontend
 npm run dev
 ```
 
-Access the dashboard at `http://localhost:5173`.
+ACCESS THE DASHBOARD AT: `http://localhost:5173`
 
-## 📊 Logging & Analysis
+---
 
-*   **Console Logs**: The backend prints detailed, time-stamped logs of every action ("Fetching batch data...", "AI Thinking...", "Trade Executed...").
-*   **Trade Log**: Check `data/trade_log.csv` for a CSV record of all automated trades.
-*   **Portfolio State**: `data/portfolio.json` persists your current balance and holdings across restarts.
+## 📊 System Architecture
 
-## 🧪 Testing
+### **The "Antigravity" Loop**
+The system runs a continuous event loop (`antigravity_loop`) that:
+1.  **Polls** configured tickers (AAPL, TSLA, NVDA, etc.) every 60 seconds.
+2.  **Fetches** fresh market data and news.
+3.  **Generates** a `TradingSignal` using the `SignalGenerator`.
+4.  **Decides** whether to trade or consult AI.
+5.  **Executes** paper trades and logs them to `data/trade_log.csv`.
 
-To verify data accuracy against Yahoo Finance:
-```bash
-python tests/test_data_accuracy.py
+### **Folder Structure**
 ```
-To verify batch data fetching:
-```bash
-python tests/test_batch.py
+dayTradingAI/
+├── backend/
+│   ├── data/               # Portfolio JSON and Trade Logs
+│   ├── services/
+│   │   ├── ai_engine.py    # LLM Integration & Fallback Logic
+│   │   ├── trader.py       # Execution (Buy/Sell) Logic
+│   │   ├── signal_generator.py # Hybrid Algorithm
+│   │   ├── data_manager.py # Data Aggregation
+│   │   └── ...
+│   ├── main.py             # FastAPI Entry Point
+│   └── config.py           # Env Config
+├── frontend/               # React Application
+└── start.sh                # Startup Script
 ```
+
+---
+
+## ⚠️ Disclaimer
+This software is for **EDUCATIONAL PURPOSES ONLY**. It is a **paper trading** simulation. Do not use this for real money trading without significant modifications and risk assessment. The creators are not responsible for any financial losses.

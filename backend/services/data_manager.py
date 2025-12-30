@@ -20,10 +20,13 @@ from typing import Dict, List, Optional
 from backend.services.candlestick_patterns import pattern_detector
 from backend.services.signal_generator import signal_generator
 from backend.services.news_service import news_service
+from colorama import Fore, Style, init
 
+init(autoreset=True)
 
 class DataManager:
     def __init__(self):
+        print(f"{Fore.CYAN}[DATA] Data Manager initialized.")
         self.tickers = ["AAPL", "TSLA", "NVDA", "AMD", "META", "MSFT", "GOOGL", "AMZN"]
         self.indices = ["^GSPC", "^IXIC", "^OMXS30"]  # S&P 500, Nasdaq, OMX Stockholm 30
 
@@ -72,6 +75,7 @@ class DataManager:
         Fetches comprehensive market data with pattern analysis.
         Includes: Price, Volume, OHLC, Technical Indicators, and Candlestick Patterns.
         """
+        print(f"{Fore.CYAN}[DATA] Fetching market data for {ticker}...")
         try:
             stock = yf.Ticker(ticker)
             info = stock.fast_info
@@ -245,12 +249,12 @@ class DataManager:
         except:
             return {"bids": [], "asks": []}
 
-    def get_news(self, ticker: str = None) -> List[Dict]:
+    def get_news(self, ticker: str, limit: int = 5) -> List[Dict]:
         """
-        Aggregates news from multiple sources.
-        Uses the enhanced news service.
+        Wrapper to get news from NewsService
         """
-        return news_service.get_news(ticker, max_articles=10)
+        print(f"{Fore.CYAN}[DATA] Collecting news for {ticker}...")
+        return news_service.get_news(ticker, limit)
 
     def get_news_with_sentiment(self, ticker: str = None) -> Dict:
         """

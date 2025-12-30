@@ -1,6 +1,9 @@
 import json
 import os
 from datetime import datetime
+from colorama import Fore, Style, init
+
+init(autoreset=True)
 
 DATA_FILE = os.path.join(os.path.dirname(__file__), '../data/portfolio.json')
 LOG_FILE = os.path.join(os.path.dirname(__file__), '../data/trade_log.csv')
@@ -26,7 +29,7 @@ class PaperTradingService:
     def _reset_portfolio(self):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] PORTFOLIO: Resetting portfolio to $1000.00 initial balance.")
         self.balance = 1000.0
-        self.holdings = {} # { "AAPL": { "qty": 10, "avg_price": 150.0 } }
+        self.holdings = {} 
         self.trade_history = []
         self.watchlist = []
         self._save_portfolio()
@@ -121,10 +124,10 @@ class PaperTradingService:
             self.trade_history.append(trade)
             self._save_portfolio()
             self._log_trade_csv(trade)
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] TRADING: EXECUTED BUY {qty} {ticker} @ ${price}")
+            print(f"{Fore.GREEN}{Style.BRIGHT}[TRADE] EXECUTED BUY {qty} {ticker} @ ${price}")
             return trade
         
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] TRADING: Insufficient funds to buy {ticker}.")
+        print(f"{Fore.YELLOW}[TRADE] Insufficient funds to buy {ticker}.")
         return None
 
     def sell_stock(self, ticker, price, reasoning, confidence=0):
@@ -151,7 +154,8 @@ class PaperTradingService:
             self.trade_history.append(trade)
             self._save_portfolio()
             self._log_trade_csv(trade)
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] TRADING: EXECUTED SELL {qty} {ticker} @ ${price}. Profit: ${profit:.2f}")
+            color = Fore.GREEN if profit >= 0 else Fore.RED
+            print(f"{color}{Style.BRIGHT}[TRADE] EXECUTED SELL {qty} {ticker} @ ${price}. Profit: ${profit:.2f}")
             return trade
         return None
 

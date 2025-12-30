@@ -18,6 +18,7 @@ import pandas as pd
 
 from backend.services.candlestick_patterns import pattern_detector, Candle
 from backend.services.news_service import news_service
+from colorama import Fore
 
 
 class TradeDecision(Enum):
@@ -115,6 +116,7 @@ class SignalGenerator:
         Returns:
             TradingSignal with decision and analysis
         """
+        print(f"{Fore.BLUE}[ANALYSIS] Analyzing {ticker} technicals & patterns...")
         # 1. Convert candles and analyze patterns
         pattern_analysis = self._analyze_patterns(candles, rsi, macd, macd_signal)
 

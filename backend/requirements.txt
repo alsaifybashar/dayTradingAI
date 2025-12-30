@@ -12,3 +12,5 @@ openai
 google-generativeai
 pandas_ta
 colorama
+pytest
+httpx
