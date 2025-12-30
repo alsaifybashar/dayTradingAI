@@ -22,40 +22,27 @@ async def antigravity_loop():
             
             # Simple list of active tickers to monitor
             # In a real system this might be dynamic
-            tickers_to_monitor = ["TSLA", "AAPL", "NVDA", "AMD", "META"] 
+            tickers_to_monitor = [
+                "AAPL", "NVDA", "TSLA", "AMD", "MSFT", "JPM", "DIS", "BA", # US
+                "VOLV-B.ST", "ERIC-B.ST", "HM-B.ST", "AZN.ST", "INVE-B.ST", "SAND.ST" # Stockholm
+            ] 
             
             for ticker in tickers_to_monitor:
-                # 1. Fetch Market Data
-                market_data = data_manager.get_market_data(ticker)
+                # Use the Trader service to process the ticker
+                # This handles data fetching, analysis (Algo + AI), and execution logic
+                result = trader.process_ticker(ticker)
                 
-                if market_data:
-                    # 2. Check for Signals (Simplified event detection)
-                    # For now, we'll relay on a simple periodic check or high volatility
-                    # Let's say we just analyze regularly for this demo loop
-                    
-                    pct_change = abs(market_data.get('change_percent', 0))
-                    
-                    # Log significant moves
-                    if pct_change > 1.0:
-                        trader.log_event("INFO", f"Volatility Alert: {ticker} moved {pct_change:.2f}%")
-
-                    # 3. Check News (only if volatility is high or we just want to check)
-                    # To save tokens, we might not analyze *every* loop unless something happens.
-                    # But the user asked for "Polls... Detects... Trigger".
-                    # Let's simple-trigger analysis if change > 0.5% (Event Driven)
-                    # OR just on every N loops. For safety/cost in this demo, let's strictly follow "New Info".
-                    # Simulation: Let's assume we analyze if price moved significantly OR randomly occasionally.
-                    
-                    if pct_change > 0.5:
-                        trader.log_event("AI", f"Triggering analysis for {ticker} (Volatility detected)...")
-                        
-                        news = data_manager.get_news(ticker)
-                        portfolio = paper_trading_service.get_portfolio()
-                        
-                        analysis = ai_engine.analyze_situation(ticker, market_data, news, portfolio)
-                        
-                        # 4. Execute Decision
-                        trader.execute_strategy(ticker, analysis, market_data['price'])
+                # Check result
+                action = result.get("action_taken", "NONE")
+                decision = result.get("decision", "HOLD")
+                conf = result.get("confidence", 0)
+                price = result.get("price", 0)
+                
+                # Log the scan result to terminal so user sees activity
+                if action != "NONE":
+                    print(f"✅ [LOOP] Processed {ticker}: {action} ({decision} {conf}%)")
+                else:
+                    trader.log_event("SCAN", f"{ticker}: ${price:.2f} | Action: {decision} ({conf}%)")
                         
             # Wait 60 seconds before next poll cycle
             await asyncio.sleep(60)
@@ -119,7 +106,12 @@ def analyze_stock_manual(ticker: str):
         analysis = ai_engine.analyze_situation(ticker, stock_data, news_data, portfolio)
         
         # Execute Strategy Logic (Log trades, handle Buy/Sell orders)
-        trader.execute_strategy(ticker, analysis, stock_data['price'])
+        decision = analysis.get("decision", "HOLD")
+        confidence = analysis.get("confidence", 0)
+        reasoning = analysis.get("reasoning", "")
+        suggested_qty = analysis.get("suggested_quantity", 0)
+        
+        trader.execute_strategy(ticker, decision, confidence, reasoning, stock_data['price'], suggested_qty)
         
         response = {
             "market_data": stock_data,

@@ -49,6 +49,8 @@ class Trader:
             print(f"{Fore.RED}[ALERT] {timestamp} {message}")
         elif level == "PATTERN":
             print(f"{Fore.CYAN}[PATTERN] {timestamp} {message}")
+        elif level == "SCAN":
+            print(f"{Fore.WHITE}[SCAN] {timestamp} {message}")
         else:
             print(f"[{level}] {timestamp} {message}")
 

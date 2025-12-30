@@ -3,11 +3,13 @@ import StockChart from './StockChart';
 import AIInsights from './AIInsights';
 import NewsFeed from './NewsFeed';
 import Watchlist from './Watchlist';
+import TransactionHistory from './TransactionHistory';
 
 const API_URL = 'http://localhost:8000/api';
 
 const Dashboard = () => {
     const [searchTerm, setSearchTerm] = useState('TSLA');
+    const [activeTab, setActiveTab] = useState('news');
     const [ticker, setTicker] = useState('TSLA');
     const [marketData, setMarketData] = useState(null);
     const [newsData, setNewsData] = useState([]);
@@ -198,9 +200,40 @@ const Dashboard = () => {
                     <StockChart data={marketData} ticker={ticker} analysis={aiAnalysis} loading={loading} />
                 </div>
 
-                {/* News Feed (Below Chart) */}
-                <div style={{ flex: 1, overflow: 'hidden' }}>
-                    <NewsFeed news={newsData} loading={loading} />
+                {/* Content Tabs (News / Transactions) */}
+                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ padding: '0 0 12px 0', display: 'flex', gap: '12px' }}>
+                        <button
+                            onClick={() => setActiveTab('news')}
+                            className={`btn ${activeTab === 'news' ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{
+                                flex: 1,
+                                opacity: activeTab === 'news' ? 1 : 0.6,
+                                borderBottom: activeTab === 'news' ? '2px solid var(--neutral-cyan)' : 'none'
+                            }}
+                        >
+                            📰 News Feed
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('history')}
+                            className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{
+                                flex: 1,
+                                opacity: activeTab === 'history' ? 1 : 0.6,
+                                borderBottom: activeTab === 'history' ? '2px solid var(--neutral-purple)' : 'none'
+                            }}
+                        >
+                            📜 Trade History
+                        </button>
+                    </div>
+
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                        {activeTab === 'news' ? (
+                            <NewsFeed news={newsData} loading={loading} />
+                        ) : (
+                            <TransactionHistory trades={portfolio?.trade_history || []} />
+                        )}
+                    </div>
                 </div>
             </div>
 

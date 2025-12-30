@@ -42,6 +42,7 @@ class NewsService:
 
             # Nordic/European Markets
             "DagensIndustri": "https://www.di.se/rss",
+            "Placera": "https://www.placera.se/placera/redaktionellt.rss",
 
             # Crypto & Tech overlap (often has stock market relevance)
             "CoinDesk": "https://www.coindesk.com/arc/outboundfeeds/rss/",
