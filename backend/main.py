@@ -20,12 +20,8 @@ async def antigravity_loop():
         try:
             trader.log_event("INFO", "Polling data sources...")
             
-            # Simple list of active tickers to monitor
-            # In a real system this might be dynamic
-            tickers_to_monitor = [
-                "AAPL", "NVDA", "TSLA", "AMD", "MSFT", "JPM", "DIS", "BA", "MSFT", "NFLX", "AMZN", "BKNG", "ASML", ""  # US
-                "VOLV-B.ST", "ERIC-B.ST", "HM-B.ST", "AZN.ST", "INVE-B.ST", "SAND.ST", "SAAB-B.ST" # Stockholm
-            ] 
+            # Retrieve monitored tickers (Dow Jones + OMX30)
+            tickers_to_monitor = data_manager.get_monitored_tickers() 
             
             for ticker in tickers_to_monitor:
                 # Use the Trader service to process the ticker
@@ -127,6 +123,10 @@ def analyze_stock_manual(ticker: str):
 @app.get("/api/portfolio")
 def get_portfolio():
     return paper_trading_service.get_portfolio()
+
+@app.get("/api/tickers")
+def get_monitored_tickers():
+    return data_manager.get_monitored_tickers()
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

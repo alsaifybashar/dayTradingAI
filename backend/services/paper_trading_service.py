@@ -182,6 +182,26 @@ class PaperTradingService:
         self._save_portfolio()
         return item
 
+    def get_total_equity(self, current_prices: dict = None) -> float:
+        """
+        Calculates total equity (cash + holdings value).
+        If current_prices provided ({ticker: price}), uses them for valuation.
+        Otherwise uses entry price (approximate).
+        """
+        equity = self.balance
+        
+        for ticker, holding in self.holdings.items():
+            qty = holding['qty']
+            price = holding['entry_price']
+            
+            # Use current price if available
+            if current_prices and ticker in current_prices:
+                price = current_prices[ticker]
+                
+            equity += qty * price
+            
+        return equity
+
     def get_portfolio(self):
         return {
             "balance": self.balance,

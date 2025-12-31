@@ -18,12 +18,31 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(false);
     const [systemStatus, setSystemStatus] = useState('Idle');
 
-    // Initial watchlist tickers to track
-    const [watchlistTickers, setWatchlistTickers] = useState(['TSLA', 'AAPL', 'NVDA', 'AMD', 'META']);
+    // Initial watchlist tickers (will be fetched from backend)
+    const [watchlistTickers, setWatchlistTickers] = useState([]);
     const [watchlist, setWatchlist] = useState([]);
 
-    // Fetch Watchlist Data
+    // 1. Fetch the list of tickers we should match
+    useEffect(() => {
+        const getTickers = async () => {
+            try {
+                const response = await fetch(`${API_URL}/tickers`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setWatchlistTickers(data);
+                }
+            } catch (error) {
+                console.log("Using default tickers due to error");
+                setWatchlistTickers(['AAPL', 'NVDA', 'TSLA']);
+            }
+        }
+        getTickers();
+    }, []);
+
+    // 2. Fetch Market Data for those tickers
     const fetchWatchlistData = useCallback(async () => {
+        if (watchlistTickers.length === 0) return;
+
         try {
             const response = await fetch(`${API_URL}/batch_market_data`, {
                 method: 'POST',
@@ -32,6 +51,11 @@ const Dashboard = () => {
             });
             if (response.ok) {
                 const data = await response.json();
+                setWatchlistTickers(prev => {
+                    // Check if we need to update our list (e.g. if backend added more)
+                    // For now, just rely on the data
+                    return prev;
+                });
                 setWatchlist(data);
             }
         } catch (error) {
@@ -65,12 +89,32 @@ const Dashboard = () => {
         return () => clearTimeout(delayDebounceFn);
     }, [searchTerm, ticker, loading]);
 
+    // Fetch Portfolio Data Separately (Real-time updates)
+    const fetchPortfolio = useCallback(async () => {
+        try {
+            const response = await fetch(`${API_URL}/portfolio`);
+            if (response.ok) {
+                const data = await response.json();
+                setPortfolio(data);
+            }
+        } catch (error) {
+            console.error("Error fetching portfolio:", error);
+        }
+    }, []);
+
+    // Poll portfolio frequently (every 3 seconds) to show background trades
+    useEffect(() => {
+        fetchPortfolio();
+        const interval = setInterval(fetchPortfolio, 3000);
+        return () => clearInterval(interval);
+    }, [fetchPortfolio]);
+
     const fetchData = useCallback(async () => {
         if (!ticker) return;
         setLoading(true);
         setSystemStatus(`🔍 Starting data collection for ${ticker}...`);
 
-        // Clear previous data
+        // Clear previous analysis data but KEEP portfolio
         setMarketData(null);
         setNewsData([]);
         setAiAnalysis(null);
@@ -91,7 +135,11 @@ const Dashboard = () => {
             setMarketData(data.market_data);
             setNewsData(data.news_data || []);
             setAiAnalysis(data.analysis);
-            setPortfolio(data.portfolio);
+
+            // Allow manual analysis to update portfolio too, but the dedicated poller handles it mostly
+            if (data.portfolio) {
+                setPortfolio(data.portfolio);
+            }
 
             setSystemStatus(`✅ Analysis complete for ${ticker}`);
             console.log("[System] Data updated successfully.");
@@ -104,7 +152,9 @@ const Dashboard = () => {
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 60000);
+        // Reduce expensive full analysis polling to 5 minutes or manual only
+        // The background loop is doing the work now.
+        const interval = setInterval(fetchData, 300000);
         return () => clearInterval(interval);
     }, [ticker, fetchData]);
 

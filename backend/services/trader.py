@@ -16,8 +16,10 @@ from colorama import Fore, Style, init
 from backend.services.paper_trading_service import paper_trading_service
 from backend.services.data_manager import data_manager
 from backend.services.ai_engine import ai_engine
+from backend.services.quant_engine import quant_engine
 import csv
 import os
+import numpy as np
 
 init(autoreset=True)
 
@@ -29,6 +31,9 @@ class Trader:
         # Trading parameters
         self.min_confidence_for_trade = 65  # Minimum confidence to execute trade
         self.ai_consultation_threshold = 60  # Below this, consult AI
+        
+        # Risk Limits
+        self.max_var_percent = 2.0  # Max 2% Portfolio VaR
 
         # Statistics
         self.trades_executed = 0
@@ -51,6 +56,8 @@ class Trader:
             print(f"{Fore.CYAN}[PATTERN] {timestamp} {message}")
         elif level == "SCAN":
             print(f"{Fore.WHITE}[SCAN] {timestamp} {message}")
+        elif level == "QUANT":
+             print(f"{Fore.LIGHTMAGENTA_EX}[QUANT] {timestamp} {message}")
         else:
             print(f"[{level}] {timestamp} {message}")
 
@@ -124,6 +131,26 @@ class Trader:
             self.algorithmic_decisions += 1
             reasoning = signal.get("reasoning", "")
             self.log_event("INFO", f"{ticker}: Algorithmic decision ({confidence}% conf) -> {decision}")
+            
+        # === QUANT ENGINE: Stat Arb Check ===
+        # Use OU Mean Reversion to confirm/reject
+        if market_data.get("sparkline") and len(market_data["sparkline"]) > 10:
+             ou_params = quant_engine.estimate_ou_parameters(market_data["sparkline"])
+             if ou_params.get("mean_reverting"):
+                 z_score = ou_params["z_score"]
+                 self.log_event("QUANT", f"{ticker} OU Z-Score: {z_score:.2f}")
+                 
+                 # Mean Reversion Logic:
+                 # If we want to BUY but Z > 2 (Overbought), reconsider
+                 if decision == "BUY" and z_score > 2.0:
+                     self.log_event("QUANT", f"{ticker} Z-Score > 2.0 (Overbought). Downgrading BUY.")
+                     decision = "HOLD"
+                     reasoning += " | [Quant] Rejected by OU Z-Score > 2.0"
+                 # If we want to SELL but Z < -2 (Oversold), reconsider
+                 elif decision == "SELL" and z_score < -2.0:
+                     self.log_event("QUANT", f"{ticker} Z-Score < -2.0 (Oversold). Downgrading SELL.")
+                     decision = "HOLD"
+                     reasoning += " | [Quant] Rejected by OU Z-Score < -2.0"
 
         # Execute the strategy
         result = self.execute_strategy(
@@ -146,35 +173,70 @@ class Trader:
             "price": current_price
         }
 
+    def _calculate_performance_metrics(self):
+        """Calculates Win Rate and W/L Ratio from history"""
+        history = paper_trading_service.trade_history
+        completed_trades = [t for t in history if t['type'] == 'SELL']
+        
+        if not completed_trades:
+            return 0.55, 1.5 # Defaults for startup
+            
+        wins = [t for t in completed_trades if t['profit'] > 0]
+        losses = [t for t in completed_trades if t['profit'] <= 0]
+        
+        win_rate = len(wins) / len(completed_trades) if completed_trades else 0.5
+        
+        avg_win = np.mean([t['profit'] for t in wins]) if wins else 1.0
+        avg_loss = abs(np.mean([t['profit'] for t in losses])) if losses else 1.0
+        
+        if avg_loss == 0: avg_loss = 1.0
+        
+        return win_rate, avg_win / avg_loss
+
     def execute_strategy(self, ticker: str, decision: str, confidence: float,
                          reasoning: str, current_price: float,
                          suggested_qty: int = 0) -> dict:
         """
         Executes the trading logic based on decision and confidence.
-
-        Args:
-            ticker: Stock ticker
-            decision: "BUY", "SELL", or "HOLD"
-            confidence: 0-100
-            reasoning: Explanation for the decision
-            current_price: Current stock price
-            suggested_qty: Suggested quantity to trade
-
-        Returns:
-            Dict with action taken
+        Now uses Kelly Criterion for sizing and VaR for risk.
         """
         result = {"action": "NONE"}
+        portfolio_val = paper_trading_service.balance + sum(h['qty']*h['entry_price'] for h in paper_trading_service.holdings.values())
+
+        # 1. RISK CHECK: Value At Risk
+        # (Simplified: using dummy returns for now as we don't have full hist)
+        # In prod: fetch daily returns for portfolio
+        var_metrics = quant_engine.calculate_var(portfolio_val, [0.01, -0.01, 0.02, 0.005, -0.005]) 
+        if var_metrics['var_percent'] > self.max_var_percent:
+             self.log_event("ALERT", f"Portfolio VaR ({var_metrics['var_percent']:.2f}%) exceeds limit {self.max_var_percent}%. Halting new buys.")
+             decision = "HOLD" if decision == "BUY" else decision
 
         # 1. BUY LOGIC
         if decision == "BUY":
             if confidence >= self.min_confidence_for_trade:
+                # === QUANT ENGINE: Kelly Sizing ===
+                win_rate, wl_ratio = self._calculate_performance_metrics()
+                kelly_fraction = quant_engine.calculate_kelly_criterion(win_rate, wl_ratio, half_kelly=True)
+                
+                # Cap max allocation to 25% for safety regardless of Kelly
+                max_allocation = 0.25 
+                allocation_fraction = min(max(0.02, kelly_fraction), max_allocation) # Min 2%, Max 25%
+                
+                target_value = portfolio_val * allocation_fraction
+                quant_qty = int(target_value / current_price)
+                
+                # Log the quant sizing details
+                if quant_qty != suggested_qty:
+                    self.log_event("QUANT", f"Kelly Sizing ({allocation_fraction*100:.1f}%) suggests {quant_qty} shares (Base: {suggested_qty})")
+                    suggested_qty = quant_qty
+                
                 trade = paper_trading_service.evaluate_trade(
                     ticker,
                     "BUY",
                     current_price,
                     confidence,
                     reasoning,
-                    quantity=suggested_qty
+                    quantity=max(1, suggested_qty)
                 )
                 if trade:
                     self.trades_executed += 1
@@ -280,3 +342,4 @@ class Trader:
 
 
 trader = Trader()
+

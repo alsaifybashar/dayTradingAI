@@ -27,8 +27,28 @@ init(autoreset=True)
 class DataManager:
     def __init__(self):
         print(f"{Fore.CYAN}[DATA] Data Manager initialized.")
-        self.tickers = ["AAPL", "TSLA", "NVDA", "AMD", "META", "MSFT", "GOOGL", "AMZN"]
+        # Dow Jones Industrial Average (Approximate 2024/2025)
+        self.dow_tickers = [
+            "AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "GS", 
+            "HD", "HON", "IBM", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", 
+            "NKE", "NVDA", "PG", "SHW", "TRV", "UNH", "V", "VZ", "WMT", "AMZN"
+        ]
+        
+        # OMX Stockholm 30 (Approximate)
+        self.omx30_tickers = [
+            "ABB.ST", "ALFA.ST", "ASSA-B.ST", "AZN.ST", "ATCO-A.ST", "ATCO-B.ST", 
+            "BOL.ST", "ELUX-B.ST", "ERIC-B.ST", "ESSITY-B.ST", "EVO.ST", "GETI-B.ST", 
+            "HEXA-B.ST", "HM-B.ST", "INVE-B.ST", "KIN-B.ST", "NDA-SE.ST", "NIBE-B.ST", 
+            "SAAB-B.ST", "SBB-B.ST", "SCA-B.ST", "SEB-A.ST", "SINCH.ST", "SKF-B.ST", 
+            "SSAB-A.ST", "SWED-A.ST", "SHB-A.ST", "TEL2-B.ST", "TELIA.ST", "VOLV-B.ST"
+        ]
+        
+        self.tickers = self.dow_tickers + self.omx30_tickers
         self.indices = ["^GSPC", "^IXIC", "^OMXS30"]  # S&P 500, Nasdaq, OMX Stockholm 30
+
+    def get_monitored_tickers(self) -> List[str]:
+        """Returns the list of all monitored tickers."""
+        return self.tickers
 
     def get_batch_data(self, tickers: list):
         """
@@ -121,6 +141,17 @@ class DataManager:
                 macd_signal=latest.get('MACDs_12_26_9')
             )
 
+            # === QUANT ENGINE: Microstructure (Simulated L2) ===
+            # Since we don't have real L2, we synthesize it to demonstrate the architecture
+            # In production, replace with self.get_order_book(ticker)
+            from backend.services.quant_engine import quant_engine
+            # Simulate slight imbalance based on price trend
+            bias = 1.0 if info.last_price > info.open else -1.0
+            sim_book = self.get_order_book(ticker) # We'll assume this method exists and returns dict
+            obi = quant_engine.calculate_obi(sim_book['bids'], sim_book['asks'])
+            
+            # Additional OBI logic: If price is up but OBI is negative -> divergences?
+            
             # Calculate average volume for comparison
             avg_volume = hist['Volume'].mean() if 'Volume' in hist else 0
 
@@ -134,6 +165,9 @@ class DataManager:
                 "open": info.open,
                 "high": info.day_high,
                 "low": info.day_low,
+                
+                # Quantitative Metrics
+                "obi": obi,
 
                 # Technical Indicators
                 "rsi": latest.get('RSI_14'),
